@@ -1,5 +1,5 @@
 # AgriVantage
-# FastAPI Twilio Voice Bot with OpenAI, Deepgram, and LangChain
+# FastAPI Twilio Voice Bot with OpenAI and LangChain
 
 ## Overview
 
