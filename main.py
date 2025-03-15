@@ -1,9 +1,7 @@
 from fastapi import FastAPI, Request
 import openai
-import requests
 import os
 from dotenv import load_dotenv
-from deepgram import DeepgramClient
 from twilio.twiml.voice_response import VoiceResponse
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -11,17 +9,15 @@ from langchain.chains import RetrievalQA
 from langchain_community.document_loaders import DirectoryLoader, PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import aiohttp
-import json
 from pyngrok import ngrok
 from fastapi.responses import Response
-from twilio.rest import Client
 import asyncio
 
 # Load environment variables
 load_dotenv()
 
 twilio_api_key_sid = os.getenv("TWILIO_ACCOUNT_SID")
-twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET")
+twilio_api_key_secret = os.getenv("TWILIO_AUTH_TOKEN")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
 # Start NGROK tunnel (only if not already running)
@@ -31,10 +27,8 @@ if not os.getenv("NGROK_URL"):
     if os.path.exists(env_file_path):
         with open(env_file_path, "r") as env_file:
             lines = env_file.readlines()
-
         new_lines = [line for line in lines if not line.startswith("NGROK_URL=")]
         new_lines.append(f"NGROK_URL={public_url}\n")
-
         with open(env_file_path, "w") as env_file:
             env_file.writelines(new_lines)
     else:
@@ -60,6 +54,11 @@ all_docs = text_docs + pdf_docs
 
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
 texts = text_splitter.split_documents(all_docs)
+
+if not texts:
+    print("No documents loaded or split. Check your documents directory!")
+else:
+    print(f"Loaded and split {len(texts)} document chunks.")
 
 vectorstore = FAISS.from_documents(texts, OpenAIEmbeddings(openai_api_key=openai_api_key))
 retriever = vectorstore.as_retriever()
@@ -96,13 +95,13 @@ async def handle_voice_call(request: Request):
             response.say("Would you like to ask another question? Press 1 to continue or any other key to end the call.", voice="alice")
             gather = response.gather(numDigits=1, action=f"{ngrok_url}/twilio/voice-loop", method="POST")
             response.append(gather)
-
         else:
             response.say("I didn't catch that. Please try again.", voice="alice")
 
         return Response(content=str(response), media_type="application/xml")
 
     except Exception as e:
+        print(f"Error in /twilio/voice endpoint: {e}")
         return Response("Internal Server Error", status_code=500)
 
 @app.post("/twilio/voice-loop")
@@ -131,6 +130,7 @@ async def handle_voice_loop(request: Request):
         return Response(content=str(response), media_type="application/xml")
 
     except Exception as e:
+        print(f"Error in /twilio/voice-loop endpoint: {e}")
         return Response("Internal Server Error", status_code=500)
 
 async def transcribe_audio(recording_url):
@@ -138,9 +138,10 @@ async def transcribe_audio(recording_url):
         if not recording_url:
             return ""
 
-        auth = aiohttp.BasicAuth(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_API_KEY_SECRET"))
+        auth = aiohttp.BasicAuth(twilio_api_key_sid, twilio_api_key_secret)
         max_retries = 4
 
+        audio_data = None
         for attempt in range(max_retries):
             async with aiohttp.ClientSession() as session:
                 async with session.get(recording_url, auth=auth) as audio_response:
@@ -152,7 +153,7 @@ async def transcribe_audio(recording_url):
                     else:
                         return ""
 
-        if len(audio_data) < 1000:
+        if not audio_data or len(audio_data) < 1000:
             return ""
 
         form_data = aiohttp.FormData()
@@ -168,30 +169,33 @@ async def transcribe_audio(recording_url):
                     return result.get("text", "")
                 else:
                     return ""
-
     except Exception as e:
+        print(f"Error in transcribe_audio: {e}")
         return "Sorry, I encountered an error while processing your request."
 
 def get_rag_response(query: str) -> str:
-    retrieved_docs = retriever.invoke(query)
+    try:
+        retrieved_docs = retriever.get_relevant_documents(query)
+        if not retrieved_docs or len(retrieved_docs) == 0:
+            return "I'm sorry, but I can only answer questions related to sustainable agriculture. Please ask a relevant question."
 
-    if not retrieved_docs or len(retrieved_docs) == 0:
-        return "I'm sorry, but I can only answer questions related to sustainable agriculture. Please ask a relevant question."
+        context_text = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
-    context_text = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        custom_prompt = (
+            "You are an AI assistant specializing in sustainable agriculture. "
+            "You must *only answer questions based on the following context*. "
+            "If the user's question is not related to the context, respond with: "
+            "'I'm sorry, but I can only answer questions related to sustainable agriculture.'\n\n"
+            f"Context: {context_text}\n\n"
+            f"User Query: {query}\n"
+            "Answer:"
+        )
 
-    custom_prompt = (
-        "You are an AI assistant specializing in sustainable agriculture. "
-        "You must *only answer questions based on the following context*. "
-        "If the user's question is not related to the context, respond with: "
-        "'I'm sorry, but I can only answer questions related to sustainable agriculture.'\n\n"
-        f"Context: {context_text}\n\n"
-        f"User Query: {query}\n"
-        "Answer:"
-    )
-
-    response = qa_chain.run(custom_prompt)
-    return response.strip()
+        response = qa_chain.run(custom_prompt)
+        return response.strip()
+    except Exception as e:
+        print(f"Error in get_rag_response: {e}")
+        return "I'm sorry, I encountered an error while processing your query."
 
 if __name__ == "__main__":
     import uvicorn
