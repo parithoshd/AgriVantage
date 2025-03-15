@@ -57,4 +57,3 @@ This application is designed specifically for farmers, allowing them to call a d
    ```bash
    https://xxxx-xxxx-xxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx.ngrok-free.app/twilio/voice
 10. You're all set—just call the number and you're ready to go!
-Updated code

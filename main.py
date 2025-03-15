@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request
-import openai
 import os
 from dotenv import load_dotenv
 from twilio.twiml.voice_response import VoiceResponse

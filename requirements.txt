@@ -1,0 +1,11 @@
+fastapi
+python-dotenv
+twilio
+langchain
+langchain-openai
+langchain-community
+aiohttp
+pyngrok
+uvicorn
+faiss-cpu
+pymupdf
