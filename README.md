@@ -27,7 +27,7 @@ This application is designed specifically for farmers, allowing them to call a d
 - **Python 3.9** (recommended for FAISS compatibility)
 - Twilio Account (with a purchased phone number)
 - OpenAI API Key
-- Deepgram API Key
+- Deepgram API Key (Optional)
 - Ngrok Account (for tunneling)
 
 ## Installation
