@@ -11,10 +11,11 @@ import aiohttp
 from pyngrok import ngrok
 from fastapi.responses import Response
 import asyncio
+import warnings
 
 # Load environment variables
 load_dotenv()
-
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 twilio_api_key_sid = os.getenv("TWILIO_ACCOUNT_SID")
 twilio_api_key_secret = os.getenv("TWILIO_AUTH_TOKEN")
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -87,6 +88,7 @@ async def handle_voice_call(request: Request):
 
         transcript = await transcribe_audio(recording_url)
         if transcript:
+            print(transcript)
             response_text = get_rag_response(transcript)
             response.say(response_text, voice="alice")
 
@@ -183,6 +185,7 @@ def get_rag_response(query: str) -> str:
         custom_prompt = (
             "You are an AI assistant specializing in sustainable agriculture. "
             "You must *only answer questions based on the following context*. "
+            "Keep the answer concise, if multiple questions are asked, answer all."
             "If the user's question is not related to the context, respond with: "
             "'I'm sorry, but I can only answer questions related to sustainable agriculture.'\n\n"
             f"Context: {context_text}\n\n"
